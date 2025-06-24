@@ -1,6 +1,27 @@
+import os
 import streamlit as st
 import pandas as pd
 import altair as alt
+
+# Configuración de la página
+st.set_page_config(page_title='Pump Dashboard', layout='wide')
+
+# Rutas de los logos
+here = os.path.dirname(__file__)
+imgs = os.path.join(here, 'images')
+metso_logo = os.path.join(imgs, 'metso_logo.png')
+capstone_logo = os.path.join(imgs, 'capstone_logo.png')
+
+# Mostrar logos en la parte superior
+top_cols = st.columns([1, 6, 1])
+with top_cols[0]:
+    st.image(metso_logo, width=120)
+with top_cols[2]:
+    st.image(capstone_logo, width=120)
+
+# Espacio y título
+st.write('')
+st.title('📊 Pump Performance Dashboard')
 
 # Definición de secciones con sus columnas asociadas
 GROUPS = {
@@ -119,10 +140,6 @@ GROUPS = {
     ],
 }
 
-# Configuración de la página
-st.set_page_config(page_title='Pump Dashboard', layout='wide')
-st.title('📊 Pump Performance Dashboard')
-
 @st.cache_data
 def load_data(csv_path: str) -> pd.DataFrame:
     """Carga el CSV limpio con parsing de fechas."""
@@ -167,11 +184,11 @@ df_long = (
     .assign(tipo=lambda d: d['metric'].apply(classify_metric))
 )
 
-# Paleta dinámica basada en tipos presentes
+# ===== Gráficos y tablas =====
+# 1) Series de tiempo
 present_types = df_long['tipo'].unique().tolist()
 palette = [tipo_map[t] for t in present_types]
 
-# === Gráfico de líneas ===
 chart = alt.Chart(df_long).mark_line().encode(
     x='Fecha:T',
     y='valor:Q',
@@ -180,7 +197,7 @@ chart = alt.Chart(df_long).mark_line().encode(
 ).interactive().properties(width='container', height=350)
 st.altair_chart(chart, use_container_width=True)
 
-# === Estadísticas descriptivas ===
+# 2) Estadísticas descriptivas
 st.header('Estadísticas descriptivas')
 st.dataframe(
     df_long
@@ -189,13 +206,11 @@ st.dataframe(
     .reset_index()
 )
 
-# === Relaciones de flujo vs potencia y nivel ===
+# 3) Relaciones de flujo
 st.header('Relaciones de flujo')
 flows = [c for c in cols if 'Flujo' in c]
 pows = [c for c in cols if 'Potencia' in c]
 levels = [c for c in cols if 'Nivel' in c]
-
-# Flujo vs Potencia
 if flows and pows:
     for f in flows:
         for p in pows:
@@ -207,8 +222,6 @@ if flows and pows:
                 tooltip=['Fecha:T', f+':Q', p+':Q']
             ).interactive().properties(width='container', height=300)
             st.altair_chart(scatter, use_container_width=True)
-
-# Flujo vs Nivel
 if flows and levels:
     for f in flows:
         for l in levels:
@@ -221,40 +234,27 @@ if flows and levels:
             ).interactive().properties(width='container', height=300)
             st.altair_chart(scatter, use_container_width=True)
 
-# === Distribución de métricas por parámetro ===
+# 4) Box-and-Whisker por métrica
 st.header('Distribución de métricas')
 df = df_long
 metrics = cols
-# Organizar boxplots en una cuadrícula de 3 columnas
-def render_boxplots(df, metrics, n_cols=3):
-    cols_streamlit = st.columns(n_cols)
-    for idx, metric in enumerate(metrics):
-        data = df[df['metric'] == metric]
-        # Boxplot con bigotes min-max
-        box = alt.Chart(data).mark_boxplot(
-            size=60,
-            extent='min-max'
-        ).encode(
-            y=alt.Y('valor:Q', title='Valor'),
-            color=alt.value(tipo_map[classify_metric(metric)])
-        )
-        # Media como rombo negro
-        df_mean = data['valor'].mean()
-        mean = alt.Chart(pd.DataFrame({'media':[df_mean]})).mark_point(
-            shape='diamond', size=120, color='black'
-        ).encode(
-            y=alt.Y('media:Q', title='')
-        )
-        chart = alt.layer(box, mean).properties(
-            title=metric,
-            width=300,
-            height=400
-        )
-        col = cols_streamlit[idx % n_cols]
-        with col:
-            st.altair_chart(chart, use_container_width=True)
-
-render_boxplots(df, metrics, n_cols=3)
+cols_streamlit = st.columns(3)
+for idx, metric in enumerate(metrics):
+    data = df[df['metric'] == metric]
+    box = alt.Chart(data).mark_boxplot(size=60, extent='min-max').encode(
+        y=alt.Y('valor:Q', title='Valor'),
+        color=alt.value(tipo_map[classify_metric(metric)])
+    )
+    df_mean = pd.DataFrame({'media': [data['valor'].mean()]})
+    mean = alt.Chart(df_mean).mark_point(shape='diamond', size=120, color='black').encode(
+        y='media:Q'
+    )
+    chart = alt.layer(box, mean).properties(
+        title=metric, width=250, height=350
+    )
+    col = cols_streamlit[idx % 3]
+    with col:
+        st.altair_chart(chart, use_container_width=True)
 
 st.markdown('---')
 st.write('✌️ Fin del análisis')
